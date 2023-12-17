@@ -39,7 +39,7 @@ public class ModrinthMarket extends Market {
         super("modrinth-support.market", icon);
         this.plugin = plugin;
         c.allowRedirect = true;
-        c.headers.put("User-Agent", "FlashLauncher/modrinth.ModrinthSupport/" + plugin.getVersion() + "-indev (mcflashlauncher@gmail.com)");
+        c.headers.put("User-Agent", "FlashLauncher/modrinth.ModrinthSupport/" + plugin.getVersion() + " (mcflashlauncher@gmail.com)");
         cache = new File(cacheDir, "icons");
         if (!cache.exists())
             cache.mkdirs();
