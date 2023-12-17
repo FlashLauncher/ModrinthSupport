@@ -1,20 +1,26 @@
 package modrinth;
 
 import UIL.base.IImage;
-import Utils.json.Json;
+import Utils.Core;
+import Utils.IO;
 import Utils.json.JsonDict;
 import Utils.json.JsonElement;
-import Utils.web.WebClient;
-import Utils.web.WebResponse;
+import Utils.json.JsonList;
 import minecraft.MCFindEvent;
 import minecraft.MinecraftContent;
 
-import java.io.ByteArrayOutputStream;
-import java.net.URI;
+import java.io.File;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 public class ModrinthContent extends MinecraftContent {
+    public final ModrinthMarket market;
+
     public String lowerName;
     public final ArrayList<ModrinthVersion> versions = new ArrayList<>();
 
@@ -23,20 +29,21 @@ public class ModrinthContent extends MinecraftContent {
      * @param author Author of the project
      */
     public ModrinthContent(
-            final WebClient client,
+            final ModrinthMarket market,
             final String id,
             final String name,
             final IImage icon,
             final String author,
             final String shortDescription
-    ) throws Exception {
+    ) {
         super(id, author);
+        this.market = market;
         setName(name);
         lowerName = name.toLowerCase();
         setIcon(icon);
         setShortDescription(shortDescription);
-        final ByteArrayOutputStream os = new ByteArrayOutputStream();
-        final WebResponse r = client.open("GET", URI.create("https://api.modrinth.com/v2/project/" + id + "/version"), os, true);
+        /*final ByteArrayOutputStream os = new ByteArrayOutputStream();
+        final WebResponse r = market.c.open("GET", URI.create("https://api.modrinth.com/v2/project/" + id + "/version"), os, true);
         r.auto();
         if (r.getResponseCode() != 200)
             throw new Exception("[Modrinth] Unknown code: " + r.getResponseCode());
@@ -69,13 +76,92 @@ public class ModrinthContent extends MinecraftContent {
             for (final JsonElement se : d.getAsList("game_versions"))
                 ver.versions.add(se.getAsString());
             versions.add(ver);
+        }*/
+    }
+
+    public ModrinthContent(
+            final ModrinthMarket market,
+            final JsonDict dict
+    ) {
+        super(dict.getAsString("slug"), dict.getAsString("author"));
+        this.market = market;
+        setName(dict.getAsString("title"));
+        lowerName = getName().toString().toLowerCase();
+        setIcon(market.getIcon(dict.getAsString("icon_url")));
+        setShortDescription(dict.getAsString("description"));
+    }
+
+    public void save() throws IOException, NoSuchAlgorithmException {
+        final JsonDict d = new JsonDict();
+        d.put("slug", getID());
+        d.put("title", getName().toString());
+        d.put("author", getAuthor());
+        d.put("description", getShortDescription().toString());
+
+        final JsonList l = new JsonList();
+        for (final ModrinthVersion ver : versions)
+            l.add(new JsonElement(ver.id));
+        d.put("versions", l);
+
+        final File f = new File(market.plugin.getPluginData(), "content/" + getID() + "/info.json");
+        if (f.exists()) {
+            final byte[] data = d.toString().getBytes(StandardCharsets.UTF_8);
+            if (!Core.hashToHex("sha-256", data).equals(Core.hashToHex("sha-256", IO.readFully(f))))
+                Files.write(f.toPath(), data);
+        } else {
+            final File p = f.getParentFile();
+            if (!p.exists())
+                p.mkdirs();
+            Files.write(f.toPath(), d.toString().getBytes(StandardCharsets.UTF_8));
         }
     }
 
     public static class ModrinthVersion {
-        public String id;
-        public boolean isVanilla = false, isFabric = false, isQuilt = false, isForge = false, isNeoForge = false;
-        public final ArrayList<String> versions = new ArrayList<>();
+        public final String id;
+        public boolean isVanilla, isFabric, isQuilt, isForge, isNeoForge;
+        public List<String> versions;
+
+        public ModrinthVersion(final String id) {
+            this.id = id;
+            isVanilla = false;
+            isFabric = false;
+            isQuilt = false;
+            isForge = false;
+            isNeoForge = false;
+            versions = new ArrayList<>();
+        }
+
+        public ModrinthVersion(final JsonDict dict) { id = dict.getAsString("id"); from(dict); }
+
+        public void from(final JsonDict dict) {
+            for (final JsonElement se : dict.getAsList("loaders")) {
+                switch (se.getAsString()) {
+                    case "minecraft":
+                        isVanilla = true;
+                        break;
+                    case "fabric":
+                        isFabric = true;
+                        break;
+                    case "quilt":
+                        isQuilt = true;
+                        break;
+                    case "forge":
+                        isForge = true;
+                        break;
+                    case "neoforge":
+                        isNeoForge = true;
+                        break;
+                    default:
+                        System.out.println("Unknown loader " + se.getAsString());
+                        break;
+                }
+            }
+            final JsonList l = dict.getAsList("game_versions");
+            final String[] gvl = new String[l.size()];
+            for (int i = 0; i < gvl.length; i++)
+                gvl[i] = l.get(i).getAsString();
+            versions = Arrays.asList(gvl);
+        }
     }
 
     @Override

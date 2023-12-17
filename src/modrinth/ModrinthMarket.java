@@ -23,6 +23,8 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 
 public class ModrinthMarket extends Market {
     private static final Object l = new Object();
@@ -74,10 +76,21 @@ public class ModrinthMarket extends Market {
                             final File[] mods = dc.listFiles();
                             if (mods == null)
                                 return;
+                            final ArrayList<ModrinthContent> contents = new ArrayList<>();
                             for (final File f : mods) {
-                                final JsonDict d = Json.parse(new File(f, "info.json"), "UTF-8").getAsDict();
                                 try {
-                                    final ModrinthContent content = new ModrinthContent(c,
+                                    final ModrinthContent c = new ModrinthContent(ModrinthMarket.this,
+                                            Json.parse(new File(f, "info.json"), "UTF-8").getAsDict());
+                                    if (FLCore.bindMeta(c)) {
+                                        plugin.mcPlugin.addContent(c);
+                                        contents.add(c);
+                                    }
+                                } catch (final Exception ex) {
+                                    ex.printStackTrace();
+                                }
+                                /*final JsonDict d = Json.parse(new File(f, "info.json"), "UTF-8").getAsDict();
+                                try {
+                                    final ModrinthContent content = new ModrinthContent(this,
                                             d.getAsString("slug"),
                                             d.getAsString("title"),
                                             getIcon(d.getAsString("icon_url")),
@@ -88,7 +101,69 @@ public class ModrinthMarket extends Market {
                                         plugin.mcPlugin.addContent(content);
                                 } catch (final Exception ex) {
                                     ex.printStackTrace();
-                                }
+                                }*/
+                            }
+                            if (contents.isEmpty())
+                                return;
+                            StringBuilder b = new StringBuilder("https://api.modrinth.com/v2/projects?ids=[");
+                            for (final ModrinthContent c : contents)
+                                b.append('"').append(c.getID()).append("\",");
+                            ByteArrayOutputStream os = new ByteArrayOutputStream();
+                            WebResponse r = c.open("GET", new sURL(b.substring(0, b.length() - 1) + "]"), os, true);
+                            r.auto();
+                            if (r.getResponseCode() != 200)
+                                return;
+                            final ListMap<String, String> versions = new ListMap<>();
+                            for (final JsonElement e : Json.parse(os, StandardCharsets.UTF_8, true).getAsList()) {
+                                final JsonDict d = e.getAsDict();
+                                final String id = d.getAsString("slug");
+                                for (final ModrinthContent c : contents)
+                                    if (id.equals(c.getID())) {
+                                        c.setName(d.getAsString("title"));
+                                        c.lowerName = c.getName().toString().toLowerCase();
+                                        c.setIcon(getIcon(d.getAsString("icon_url")));
+                                        c.setShortDescription(d.getAsString("description"));
+                                        c.save();
+                                        for (final JsonElement i : d.getAsList("versions")) {
+                                            final String v = i.getAsString();
+                                            final File f = new File(dc, id + "/" + v + ".json");
+                                            if (f.exists())
+                                                c.versions.add(new ModrinthContent.ModrinthVersion(Json.parse(f, "UTF-8").getAsDict()));
+                                            else {
+                                                c.versions.add(new ModrinthContent.ModrinthVersion(v));
+                                                versions.put(v, id);
+                                            }
+                                        }
+                                        break;
+                                    }
+                            }
+                            if (versions.isEmpty()) {
+                                return;
+                            }
+                            b = new StringBuilder("https://api.modrinth.com/v2/versions?ids=[");
+                            for (final String ver : versions.keySet())
+                                b.append('"').append(ver).append("\",");
+                            os = new ByteArrayOutputStream();
+                            r = c.open("GET", new sURL(b.substring(0, b.length() - 1) + "]"), os, true);
+                            r.auto();
+                            if (r.getResponseCode() != 200)
+                                return;
+                            for (final JsonElement e : Json.parse(os, StandardCharsets.UTF_8, true).getAsList()) {
+                                final JsonDict d = e.getAsDict();
+                                final String v = d.getAsString("id"), id = versions.get(v);
+                                for (final ModrinthContent c : contents)
+                                    if (id.equals(c.getID())) {
+                                        final File f = new File(dc, id + "/" + v + ".json"), p = f.getParentFile();
+                                        if (!p.exists())
+                                            p.mkdirs();
+                                        Files.write(f.toPath(), d.toString().getBytes(StandardCharsets.UTF_8));
+                                        for (final ModrinthContent.ModrinthVersion ver : c.versions)
+                                            if (ver.id.equals(v)) {
+                                                ver.from(d);
+                                                break;
+                                            }
+                                        break;
+                                    }
                             }
                         } else
                             dc.mkdirs();
@@ -141,7 +216,7 @@ public class ModrinthMarket extends Market {
                             public void run() {
                                 try {
                                     final ModrinthContent m = new ModrinthContent(
-                                            c,
+                                            ModrinthMarket.this,
                                             ed.getAsString("slug"),
                                             n,
                                             icon,
@@ -150,10 +225,7 @@ public class ModrinthMarket extends Market {
                                     );
                                     if (FLCore.bindMeta(m)) {
                                         plugin.mcPlugin.addContent(m);
-                                        final File d = new File(plugin.getPluginData(), "content/" + getID()), f = new File(d, "info.json");
-                                        if (!d.exists())
-                                            d.mkdirs();
-                                        Files.write(f.toPath(), ed.toString().getBytes(StandardCharsets.UTF_8));
+                                        m.save();
                                     }
                                 } catch (final Exception ex) {
                                     ex.printStackTrace();
