@@ -4,6 +4,7 @@ import Launcher.*;
 import Launcher.base.LaunchListener;
 import UIL.LProc;
 import UIL.Lang;
+import UIL.LangItem;
 import UIL.Swing.SSwing;
 import UIL.UI;
 import UIL.base.IImage;
@@ -28,9 +29,13 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ModrinthMarket extends Market {
-    public final LProc INSTALLING = new LProc(Lang.get("modrinth.installing")), DOWNLOADING = new LProc(Lang.get("modrinth.downloading"));
+    public static final LProc
+            SCANNING = new LProc(Lang.get("modrinth.scanning")),
+            INSTALLING = new LProc(Lang.get("modrinth.installing")),
+            DOWNLOADING = new LProc(Lang.get("modrinth.downloading"));
 
     private static final Object l = new Object();
     private static final ListMap<String, LoadingImage> ICONS = new ListMap<>();
@@ -324,21 +329,40 @@ public class ModrinthMarket extends Market {
         return null;
     }
 
+    final ModrinthContent byID(final String id) throws Exception {
+        ModrinthContent c = getByID(id);
+        if (c == null) {
+            c = new ModrinthContent(ModrinthMarket.this, id);
+            System.out.println("[Modrinth] Add " + id);
+            c.scan();
+            if (FLCore.bindMeta(c)) {
+                plugin.mcPlugin.addContent(c);
+                list.add(c);
+                c.save();
+            } else
+                return getByID(id);
+        }
+        return c;
+    }
+
     final Runnable1a<MCProfileScanner> onScan = event -> {
         try {
             final File f = new File(event.home, "modrinth.list.json");
             if (!f.exists())
                 return;
             final JsonList l = Json.parse(f, "UTF-8").getAsList();
-            for (final JsonElement e : l) {
-                final JsonDict d = e.getAsDict();
-                final ModrinthContent c = getByID(d.getAsString("slug"));
-                if (c == null)
-                    continue;
-                final ModrinthContent.ModrinthVersion v = c.getByID(d.getAsString("version"));
-                if (v != null)
-                    event.contents.add(v);
-            }
+            for (final JsonElement e : l)
+                try {
+                    final JsonDict d = e.getAsDict();
+                    final ModrinthContent c = byID(d.getAsString("slug"));
+                    if (c == null)
+                        continue;
+                    final ModrinthContent.ModrinthVersion v = c.getByID(d.getAsString("version"));
+                    if (v != null)
+                        event.contents.add(v);
+                } catch (final Exception ex) {
+                    ex.printStackTrace();
+                }
         } catch (final Exception ex) {
             ex.printStackTrace();
         }
@@ -348,101 +372,121 @@ public class ModrinthMarket extends Market {
         @Override
         public void preLaunch() {
             try {
-                final TaskGroupAutoProgress g = new TaskGroupAutoProgress(1);
+                final TaskGroupAutoProgress g = new TaskGroupAutoProgress(2);
                 final File
                         contents = new File(plugin.getPluginData(), "content"),
                         home = evt.configuration.workDir, mods = new File(home, "mods"), f = new File(home, "modrinth.list.json");
                 if (!f.exists())
                     return;
                 final JsonList l = Json.parse(f, "UTF-8").getAsList();
-                for (final JsonElement e : l) {
-                    final JsonDict d = e.getAsDict();
-                    final ModrinthContent c = getByID(d.getAsString("slug"));
-                    if (c == null)
-                        continue;
-                    final ModrinthContent.ModrinthVersion v = c.getByID(d.getAsString("version"));
-                    if (v == null)
-                        continue;
-                    boolean cont = false;
-                    for (final ModrinthContent.ModrinthVersion.ModrinthFile sf : v.files) {
-                        if (sf.filename.startsWith("/") || sf.filename.contains("..")) {
-                            System.out.println("[Modrinth] Skip " + sf.filename);
-                            continue;
-                        }
-                        if (new File(mods, sf.filename).exists())
-                            continue;
-                        cont = true;
-                        break;
-                    }
-                    if (!cont)
-                        continue;
+                final int length = l.size();
+                final AtomicInteger index = new AtomicInteger(0);
+                for (final JsonElement e : l)
                     g.addTask(new Task() {
-                        final Task w;
-
                         @Override
-                        public void run() throws Throwable {
-                            w.waitFinish();
-                            if (v.isFabric || v.isQuilt || v.isForge || v.isNeoForge) {
-                                for (final ModrinthContent.ModrinthVersion.ModrinthFile f : v.files) {
-                                    if (f.filename.startsWith("/") || f.filename.contains("..")) {
-                                        System.out.println("[Modrinth] Skip " + f.filename);
+                        public void run() {
+                            try {
+                                final JsonDict d = e.getAsDict();
+                                final ModrinthContent c = byID(d.getAsString("slug"));
+                                if (c == null)
+                                    return;
+                                final ModrinthContent.ModrinthVersion v = c.getByID(d.getAsString("version"));
+                                if (v == null)
+                                    return;
+                                boolean cont = false;
+                                for (final ModrinthContent.ModrinthVersion.ModrinthFile sf : v.files) {
+                                    if (sf.filename.startsWith("/") || sf.filename.contains("..")) {
+                                        System.out.println("[Modrinth] Skip " + sf.filename);
                                         continue;
                                     }
-                                    final File f2 = new File(contents, v.getContent().getID() + "/" + v.id + "/" + f.filename), file = new File(mods, f.filename);
-                                    if (file.exists() || !f2.exists())
+                                    if (new File(mods, sf.filename).exists())
                                         continue;
-                                    Files.copy(f2.toPath(), file.toPath());
+                                    cont = true;
+                                    break;
                                 }
-                            }
-                        }
+                                if (!cont)
+                                    return;
+                                g.addTask(new Task() {
+                                    final Task w;
 
-                        @Override public String toString() { return INSTALLING.toString(c.getName(), g.getProgress(), g.getMaxProgress()); }
-
-                        {
-                            synchronized (tasks) {
-                                Task t = tasks.get(v);
-                                if (t == null) {
-                                    t = new Task() {
-                                        @Override
-                                        public void run() throws Throwable {
-                                            final File p = new File(contents, c.getID() + "/" + v.id);
-                                            if (!p.exists())
-                                                p.mkdirs();
+                                    @Override
+                                    public void run() throws Throwable {
+                                        w.waitFinish();
+                                        if (v.isFabric || v.isQuilt || v.isForge || v.isNeoForge) {
                                             for (final ModrinthContent.ModrinthVersion.ModrinthFile f : v.files) {
                                                 if (f.filename.startsWith("/") || f.filename.contains("..")) {
                                                     System.out.println("[Modrinth] Skip " + f.filename);
                                                     continue;
                                                 }
-                                                final File file = new File(p, f.filename).getCanonicalFile().getAbsoluteFile();
-                                                while (true)
-                                                    try {
-                                                        final ByteArrayOutputStream os = new ByteArrayOutputStream();
-                                                        final WebResponse r = ModrinthMarket.this.c.open("GET", f.url, os, true);
-                                                        r.auto();
-                                                        if (r.getResponseCode() != 200) {
-                                                            System.out.println("Unknown code: " + r.getResponseCode());
-                                                            break;
-                                                        }
-                                                        if (Core.hashToHex("SHA-512", os.toByteArray()).equals(f.sha512)) {
-                                                            Files.write(file.toPath(), os.toByteArray());
-                                                            break;
-                                                        }
-                                                    } catch (final Exception ex) {
-                                                        ex.printStackTrace();
-                                                        break;
-                                                    }
+                                                final File f2 = new File(contents, v.getContent().getID() + "/" + v.id + "/" + f.filename), file = new File(mods, f.filename);
+                                                if (file.exists() || !f2.exists())
+                                                    continue;
+                                                Files.copy(f2.toPath(), file.toPath());
                                             }
                                         }
+                                    }
 
-                                        @Override public String toString() { return DOWNLOADING.toString(c.getName(), g.getProgress(), g.getMaxProgress()); }
-                                    };
-                                    tasks.put(v, t);
-                                }
-                                g.addTask(w = t);
+                                    @Override
+                                    public String toString() {
+                                        return INSTALLING.toString(c.getName(), g.getProgress(), g.getMaxProgress());
+                                    }
+
+                                    {
+                                        synchronized (tasks) {
+                                            Task t = tasks.get(v);
+                                            if (t == null) {
+                                                t = new Task() {
+                                                    @Override
+                                                    public void run() throws Throwable {
+                                                        final File p = new File(contents, c.getID() + "/" + v.id);
+                                                        if (!p.exists())
+                                                            p.mkdirs();
+                                                        for (final ModrinthContent.ModrinthVersion.ModrinthFile f : v.files) {
+                                                            if (f.filename.startsWith("/") || f.filename.contains("..")) {
+                                                                System.out.println("[Modrinth] Skip " + f.filename);
+                                                                continue;
+                                                            }
+                                                            final File file = new File(p, f.filename).getCanonicalFile().getAbsoluteFile();
+                                                            while (true)
+                                                                try {
+                                                                    final ByteArrayOutputStream os = new ByteArrayOutputStream();
+                                                                    final WebResponse r = ModrinthMarket.this.c.open("GET", f.url, os, true);
+                                                                    r.auto();
+                                                                    if (r.getResponseCode() != 200) {
+                                                                        System.out.println("Unknown code: " + r.getResponseCode());
+                                                                        break;
+                                                                    }
+                                                                    if (Core.hashToHex("SHA-512", os.toByteArray()).equals(f.sha512)) {
+                                                                        Files.write(file.toPath(), os.toByteArray());
+                                                                        break;
+                                                                    }
+                                                                } catch (final Exception ex) {
+                                                                    ex.printStackTrace();
+                                                                    break;
+                                                                }
+                                                        }
+                                                    }
+
+                                                    @Override
+                                                    public String toString() {
+                                                        return DOWNLOADING.toString(c.getName(), g.getProgress(), g.getMaxProgress());
+                                                    }
+                                                };
+                                                tasks.put(v, t);
+                                            }
+                                            g.addTask(w = t);
+                                        }
+                                    }
+                                });
+                            } catch (final Exception ex) {
+                                ex.printStackTrace();
+                            } finally {
+                                index.addAndGet(1);
                             }
                         }
+
+                        @Override public String toString() { return SCANNING.toString(index.get(), length); }
                     });
-                }
                 if (g.getTaskCount() > 0)
                     evt.configuration.addTaskGroup(g);
             } catch (final Exception ex) {
