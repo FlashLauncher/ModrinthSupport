@@ -72,10 +72,11 @@ public class ModrinthContent extends MinecraftContent {
         setShortDescription(dict.getAsString("description"));
     }
 
+    public ModrinthContent(final ModrinthMarket market, final String id) { super(id, null); this.market = market; }
+
     public void scan() throws Exception {
-        StringBuilder b = new StringBuilder("https://api.modrinth.com/v2/project/" + getID());
         ByteArrayOutputStream os = new ByteArrayOutputStream();
-        WebResponse r = market.c.open("GET", new sURL(b.toString()), os, true);
+        WebResponse r = market.c.open("GET", new sURL("https://api.modrinth.com/v2/project/" + getID()), os, true);
         r.auto();
         if (r.getResponseCode() != 200)
             return;
@@ -88,6 +89,24 @@ public class ModrinthContent extends MinecraftContent {
             lowerName = getName().toString().toLowerCase();
             setIcon(market.getIcon(d.getAsString("icon_url")));
             setShortDescription(d.getAsString("description"));
+            if (getAuthor() == null) {
+                os = new ByteArrayOutputStream();
+                r = market.c.open("GET", new sURL("https://api.modrinth.com/v2/team/" + d.getAsString("team") + "/members"), os, true);
+                r.auto();
+                if (r.getResponseCode() != 200)
+                    return;
+                final StringBuilder al = new StringBuilder();
+                boolean f = true;
+                for (final JsonElement e : Json.parse(os, StandardCharsets.UTF_8, true).getAsList()) {
+                    final JsonDict m = e.getAsDict();
+                    if (f) {
+                        al.append(m.getAsDict("user").getAsString("name"));
+                        f = false;
+                    } else
+                        al.append(", ").append(m.getAsDict("user").getAsString("name"));
+                }
+                setAuthor(al.toString());
+            }
             save();
             for (final JsonElement i : d.getAsList("versions"))
                 try {
@@ -114,7 +133,7 @@ public class ModrinthContent extends MinecraftContent {
         }
         if (versions.isEmpty())
             return;
-        b = new StringBuilder("https://api.modrinth.com/v2/versions?ids=[");
+        final StringBuilder b = new StringBuilder("https://api.modrinth.com/v2/versions?ids=[");
         for (final String ver : versions.keySet())
             b.append('"').append(ver).append("\",");
         os = new ByteArrayOutputStream();
