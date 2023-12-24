@@ -378,6 +378,8 @@ public class ModrinthMarket extends Market {
                         home = evt.configuration.workDir, mods = new File(home, "mods"), f = new File(home, "modrinth.list.json");
                 if (!f.exists())
                     return;
+                if (!mods.exists())
+                    mods.mkdirs();
                 final JsonList l = Json.parse(f, "UTF-8").getAsList();
                 final int length = l.size();
                 final AtomicInteger index = new AtomicInteger(0);
@@ -412,17 +414,21 @@ public class ModrinthMarket extends Market {
                                     @Override
                                     public void run() throws Throwable {
                                         w.waitFinish();
-                                        if (v.isFabric || v.isQuilt || v.isForge || v.isNeoForge) {
-                                            for (final ModrinthContent.ModrinthVersion.ModrinthFile f : v.files) {
-                                                if (f.filename.startsWith("/") || f.filename.contains("..")) {
-                                                    System.out.println("[Modrinth] Skip " + f.filename);
-                                                    continue;
+                                        try {
+                                            if (v.isFabric || v.isQuilt || v.isForge || v.isNeoForge) {
+                                                for (final ModrinthContent.ModrinthVersion.ModrinthFile f : v.files) {
+                                                    if (f.filename.startsWith("/") || f.filename.contains("..")) {
+                                                        System.out.println("[Modrinth] Skip " + f.filename);
+                                                        continue;
+                                                    }
+                                                    final File f2 = new File(contents, v.getContent().getID() + "/" + v.id + "/" + f.filename), file = new File(mods, f.filename);
+                                                    if (file.exists() || !f2.exists())
+                                                        continue;
+                                                    Files.copy(f2.toPath(), file.toPath());
                                                 }
-                                                final File f2 = new File(contents, v.getContent().getID() + "/" + v.id + "/" + f.filename), file = new File(mods, f.filename);
-                                                if (file.exists() || !f2.exists())
-                                                    continue;
-                                                Files.copy(f2.toPath(), file.toPath());
                                             }
+                                        } catch (final Exception ex) {
+                                            ex.printStackTrace();
                                         }
                                     }
 
@@ -437,33 +443,37 @@ public class ModrinthMarket extends Market {
                                             if (t == null) {
                                                 t = new Task() {
                                                     @Override
-                                                    public void run() throws Throwable {
-                                                        final File p = new File(contents, c.getID() + "/" + v.id);
-                                                        if (!p.exists())
-                                                            p.mkdirs();
-                                                        for (final ModrinthContent.ModrinthVersion.ModrinthFile f : v.files) {
-                                                            if (f.filename.startsWith("/") || f.filename.contains("..")) {
-                                                                System.out.println("[Modrinth] Skip " + f.filename);
-                                                                continue;
-                                                            }
-                                                            final File file = new File(p, f.filename).getCanonicalFile().getAbsoluteFile();
-                                                            while (true)
-                                                                try {
-                                                                    final ByteArrayOutputStream os = new ByteArrayOutputStream();
-                                                                    final WebResponse r = ModrinthMarket.this.c.open("GET", f.url, os, true);
-                                                                    r.auto();
-                                                                    if (r.getResponseCode() != 200) {
-                                                                        System.out.println("Unknown code: " + r.getResponseCode());
-                                                                        break;
-                                                                    }
-                                                                    if (Core.hashToHex("SHA-512", os.toByteArray()).equals(f.sha512)) {
-                                                                        Files.write(file.toPath(), os.toByteArray());
-                                                                        break;
-                                                                    }
-                                                                } catch (final Exception ex) {
-                                                                    ex.printStackTrace();
-                                                                    break;
+                                                    public void run() {
+                                                        try {
+                                                            final File p = new File(contents, c.getID() + "/" + v.id);
+                                                            if (!p.exists())
+                                                                p.mkdirs();
+                                                            for (final ModrinthContent.ModrinthVersion.ModrinthFile f : v.files) {
+                                                                if (f.filename.startsWith("/") || f.filename.contains("..")) {
+                                                                    System.out.println("[Modrinth] Skip " + f.filename);
+                                                                    continue;
                                                                 }
+                                                                final File file = new File(p, f.filename).getCanonicalFile().getAbsoluteFile();
+                                                                while (true)
+                                                                    try {
+                                                                        final ByteArrayOutputStream os = new ByteArrayOutputStream();
+                                                                        final WebResponse r = ModrinthMarket.this.c.open("GET", f.url, os, true);
+                                                                        r.auto();
+                                                                        if (r.getResponseCode() != 200) {
+                                                                            System.out.println("Unknown code: " + r.getResponseCode());
+                                                                            break;
+                                                                        }
+                                                                        if (Core.hashToHex("SHA-512", os.toByteArray()).equals(f.sha512)) {
+                                                                            Files.write(file.toPath(), os.toByteArray());
+                                                                            break;
+                                                                        }
+                                                                    } catch (final Exception ex) {
+                                                                        ex.printStackTrace();
+                                                                        break;
+                                                                    }
+                                                            }
+                                                        } catch (final Exception ex) {
+                                                            ex.printStackTrace();
                                                         }
                                                     }
 
