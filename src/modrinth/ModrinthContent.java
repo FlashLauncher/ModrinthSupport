@@ -8,6 +8,7 @@ import UIL.base.IImage;
 import Utils.Core;
 import Utils.IO;
 import Utils.ListMap;
+import Utils.SyncVar;
 import Utils.json.Json;
 import Utils.json.JsonDict;
 import Utils.json.JsonElement;
@@ -34,6 +35,8 @@ import java.util.List;
  */
 public class ModrinthContent extends MinecraftContent {
     public final ModrinthMarket market;
+
+    public final SyncVar<ModrinthTeam> team = new SyncVar<>();
 
     public String lowerName;
     public final ArrayList<ModrinthVersion> versions = new ArrayList<>();
@@ -80,7 +83,6 @@ public class ModrinthContent extends MinecraftContent {
         r.auto();
         if (r.getResponseCode() != 200)
             return;
-        final File dc = new File(market.plugin.getPluginData(), "content");
         final ListMap<String, String> versions = new ListMap<>();
         {
             final JsonDict d = Json.parse(os, StandardCharsets.UTF_8, true).getAsDict();
@@ -95,20 +97,16 @@ public class ModrinthContent extends MinecraftContent {
                 r.auto();
                 if (r.getResponseCode() != 200)
                     return;
-                final StringBuilder al = new StringBuilder();
-                boolean f = true;
+                final ModrinthTeam t = new ModrinthTeam();
                 for (final JsonElement e : Json.parse(os, StandardCharsets.UTF_8, true).getAsList()) {
                     final JsonDict m = e.getAsDict();
-                    if (f) {
-                        al.append(m.getAsDict("user").getAsString("name"));
-                        f = false;
-                    } else
-                        al.append(", ").append(m.getAsDict("user").getAsString("name"));
+                    t.add(m.getAsDict("user").getAsString("username"));
                 }
-                setAuthor(al.toString());
+                t.update();
+                team.set(t);
+                setAuthor(t.toString());
             }
-            save();
-            for (final JsonElement i : d.getAsList("versions"))
+            for (final JsonElement i : Core.asReversed(d.getAsList("versions")))
                 try {
                     final String v;
                     final String vn;
@@ -120,7 +118,7 @@ public class ModrinthContent extends MinecraftContent {
                         v = i.getAsString();
                         vn = "?";
                     }
-                    final File f = new File(dc, id + "/" + v + ".json");
+                    final File f = new File(market.contentsFolder, id + "/" + v + ".json");
                     if (f.exists())
                         this.versions.add(new ModrinthContent.ModrinthVersion(this, Json.parse(f, "UTF-8").getAsDict()));
                     else {
@@ -130,6 +128,7 @@ public class ModrinthContent extends MinecraftContent {
                 } catch (final Exception ex) {
                     ex.printStackTrace();
                 }
+            save();
         }
         if (versions.isEmpty())
             return;
@@ -144,7 +143,7 @@ public class ModrinthContent extends MinecraftContent {
         for (final JsonElement e : Json.parse(os, StandardCharsets.UTF_8, true).getAsList()) {
             final JsonDict d = e.getAsDict();
             final String v = d.getAsString("id"), id = versions.get(v);
-            final File f = new File(dc, id + "/" + v + ".json"), p = f.getParentFile();
+            final File f = new File(market.contentsFolder, id + "/" + v + ".json"), p = f.getParentFile();
             if (!p.exists())
                 p.mkdirs();
             Files.write(f.toPath(), d.toString().getBytes(StandardCharsets.UTF_8));
@@ -160,7 +159,7 @@ public class ModrinthContent extends MinecraftContent {
         final JsonDict d = new JsonDict();
         d.put("slug", getID());
         d.put("title", getName().toString());
-        d.put("author", getAuthor());
+        d.put("author", team.get().toString());
         final String iu = market.getURLbyIcon(getIcon());
         if (iu != null)
             d.put("icon_url", iu);
@@ -171,7 +170,7 @@ public class ModrinthContent extends MinecraftContent {
             l.add(new JsonElement(ver.id));
         d.put("versions", l);
 
-        final File f = new File(market.plugin.getPluginData(), "content/" + getID() + "/info.json");
+        final File f = new File(market.contentsFolder, getID() + "/info.json");
         if (f.exists()) {
             final byte[] data = d.toString().getBytes(StandardCharsets.UTF_8);
             if (!Core.hashToHex("sha-256", data).equals(Core.hashToHex("sha-256", IO.readFully(f))))
@@ -189,6 +188,7 @@ public class ModrinthContent extends MinecraftContent {
         public final String id;
         public String versionNumber;
         public boolean isVanilla, isFabric, isQuilt, isForge, isNeoForge;
+
         public List<String> versions;
         public List<ModrinthFile> files;
 
@@ -371,7 +371,7 @@ public class ModrinthContent extends MinecraftContent {
                 @Override
                 public void run() {
                     try {
-                        final File f = new File(market.plugin.getPluginData(), "content/" + getID());
+                        final File f = new File(market.contentsFolder, getID());
                         final File[] l = f.listFiles();
                         if (l != null)
                             for (final File sf : l) {
