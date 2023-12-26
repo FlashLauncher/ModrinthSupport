@@ -126,7 +126,7 @@ public class ModrinthMarket extends Market {
         final ArrayList<Meta> metas = new ArrayList<>();
         try {
             final ByteArrayOutputStream os = new ByteArrayOutputStream();
-            final WebResponse r = c.open("GET", new sURL("https://api.modrinth.com/v2/search" + (query.isEmpty() ? "" : "?facets=[[\"project_type:mod\"]]&query=" + query)), os, true);
+            final WebResponse r = c.open("GET", new sURL("https://api.modrinth.com/v2/search?facets=[[\"project_type:mod\",\"project_type:resourcepack\"]]" + (query.isEmpty() ? "" : "&query=" + query)), os, true);
             synchronized (l) {
                 r.auto();
             }
@@ -158,6 +158,7 @@ public class ModrinthMarket extends Market {
                                             ed.getAsString("author"),
                                             sd.toString()
                                     );
+                                    m.setAuthor(null);
                                     m.scan();
                                     if (FLCore.bindMeta(m)) {
                                         plugin.mcPlugin.addContent(m);
@@ -251,7 +252,7 @@ public class ModrinthMarket extends Market {
         return null;
     }
 
-    final Map<JsonElement, ModrinthContent> byElements(final List<JsonElement> elements) throws Exception {
+    final Map<JsonElement, ModrinthContent> byElements(final List<JsonElement> elements) {
         final ListMap<JsonElement, ModrinthContent> contents = new ListMap<>();
         final ArrayList<ModrinthContent> scan = new ArrayList<>();
         if (elements.isEmpty())
@@ -393,10 +394,7 @@ public class ModrinthMarket extends Market {
                 return;
             for (final Map.Entry<JsonElement, ModrinthContent> c : byElements(Json.parse(f, "UTF-8").getAsList()).entrySet())
                 try {
-                    System.out.println("---");
-                    System.out.println(c.getKey().getAsDict().getAsString("version"));
                     final ModrinthContent.ModrinthVersion v = c.getValue().getByID(c.getKey().getAsDict().getAsString("version"));
-                    System.out.println(v);
                     if (v != null)
                         event.contents.add(v);
                 } catch (final Exception ex) {
@@ -412,11 +410,17 @@ public class ModrinthMarket extends Market {
         public void preLaunch() {
             try {
                 final TaskGroupAutoProgress g = new TaskGroupAutoProgress(2);
-                final File home = evt.configuration.workDir, mods = new File(home, "mods"), f = new File(home, "modrinth.list.json");
+                final File
+                        home = evt.configuration.workDir,
+                        mods = new File(home, "mods"),
+                        resourcepacks = new File(home, "resourcepacks"),
+                        f = new File(home, "modrinth.list.json");
                 if (!f.exists())
                     return;
                 if (!mods.exists())
                     mods.mkdirs();
+                if (!resourcepacks.exists())
+                    resourcepacks.mkdirs();
                 final JsonList l = Json.parse(f, "UTF-8").getAsList();
                 final AtomicInteger index = new AtomicInteger(0);
                 for (final Map.Entry<JsonElement, ModrinthContent> e : byElements(l).entrySet())
@@ -449,17 +453,18 @@ public class ModrinthMarket extends Market {
                                     public void run() throws Throwable {
                                         w.waitFinish();
                                         try {
-                                            if (v.isFabric || v.isQuilt || v.isForge || v.isNeoForge) {
-                                                for (final ModrinthContent.ModrinthVersion.ModrinthFile f : v.files) {
-                                                    if (f.filename.startsWith("/") || f.filename.contains("..")) {
-                                                        System.out.println("[Modrinth] Skip " + f.filename);
-                                                        continue;
-                                                    }
-                                                    final File f2 = new File(contentsFolder, v.getContent().getID() + "/" + v.id + "/" + f.filename), file = new File(mods, f.filename);
-                                                    if (file.exists() || !f2.exists())
-                                                        continue;
-                                                    Files.copy(f2.toPath(), file.toPath());
+                                            final File folder = v.isFabric || v.isQuilt || v.isForge || v.isNeoForge ? mods : v.isVanilla ? resourcepacks : null;
+                                            if (folder == null)
+                                                return;
+                                            for (final ModrinthContent.ModrinthVersion.ModrinthFile f : v.files) {
+                                                if (f.filename.startsWith("/") || f.filename.contains("..")) {
+                                                    System.out.println("[Modrinth] Skip " + f.filename);
+                                                    continue;
                                                 }
+                                                final File f2 = new File(contentsFolder, v.getContent().getID() + "/" + v.id + "/" + f.filename), file = new File(folder, f.filename);
+                                                if (file.exists() || !f2.exists())
+                                                    continue;
+                                                Files.copy(f2.toPath(), file.toPath());
                                             }
                                         } catch (final Exception ex) {
                                             ex.printStackTrace();

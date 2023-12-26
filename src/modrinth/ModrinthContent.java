@@ -159,7 +159,7 @@ public class ModrinthContent extends MinecraftContent {
         final JsonDict d = new JsonDict();
         d.put("slug", getID());
         d.put("title", getName().toString());
-        d.put("author", team.get().toString());
+        d.put("author", team.toString());
         final String iu = market.getURLbyIcon(getIcon());
         if (iu != null)
             d.put("icon_url", iu);
@@ -231,6 +231,16 @@ public class ModrinthContent extends MinecraftContent {
                         break;
                     case "neoforge":
                         isNeoForge = true;
+                        break;
+                    case "bukkit":
+                    case "spigot":
+                    case "paper":
+                    case "purpur":
+                    case "folia":
+                    case "bungeecord":
+                    case "velocity":
+                    case "sponge":
+                        // Servers
                         break;
                     default:
                         System.out.println("Unknown loader " + se.getAsString());
@@ -340,7 +350,7 @@ public class ModrinthContent extends MinecraftContent {
                         break;
                     }
                     if (ver.isFabric || ver.isQuilt || ver.isForge || ver.isNeoForge) {
-                        final File mods = new File(scanner.home, "mods");
+                        final File mods = new File(scanner.home, ver.isVanilla ? "resourcepacks" : "mods");
                         for (final ModrinthVersion.ModrinthFile fi : ver.files) {
                             if (fi.filename.startsWith("/") || fi.filename.contains(".."))
                                 continue;
