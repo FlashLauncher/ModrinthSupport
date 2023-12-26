@@ -296,7 +296,6 @@ public class ModrinthMarket extends Market {
                             for (final JsonElement i : Core.asReversed(d.getAsList("versions")))
                                 try {
                                     final String v, vn;
-                                    System.out.println(i);
                                     if (i.isDict()) {
                                         final JsonDict di = i.getAsDict();
                                         v = di.getAsString("id");
