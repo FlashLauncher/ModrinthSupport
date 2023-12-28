@@ -51,7 +51,7 @@ public class ModrinthMarket extends Market {
 
     final ConcurrentLinkedQueue<ModrinthContent> list = new ConcurrentLinkedQueue<>();
 
-    private ListMap<ModrinthContent.ModrinthVersion, Task> tasks = new ListMap<>();
+    private final ListMap<ModrinthContent.ModrinthVersion, Task> tasks = new ListMap<>();
 
     final File contentsFolder;
 
@@ -513,6 +513,9 @@ public class ModrinthMarket extends Market {
                                                             }
                                                         } catch (final Exception ex) {
                                                             ex.printStackTrace();
+                                                        }
+                                                        synchronized (tasks) {
+                                                            tasks.remove(v);
                                                         }
                                                     }
 
