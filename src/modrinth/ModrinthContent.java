@@ -242,8 +242,11 @@ public class ModrinthContent extends MinecraftContent {
                     case "sponge":
                         // Servers
                         break;
+                    case "modloader":
+                        // Unsupported
+                        break;
                     default:
-                        System.out.println("Unknown loader " + se.getAsString());
+                        System.out.println("[Modrinth] Unknown loader " + se.getAsString());
                         break;
                 }
             }
@@ -346,7 +349,7 @@ public class ModrinthContent extends MinecraftContent {
                 try {
                     final ModrinthVersion ver = getByID(d.getAsString("version"));
                     if (ver == null) {
-                        System.out.println("Unknown version " + d.getAsString("version") + " in " + getID());
+                        System.out.println("[Modrinth] Unknown version " + d.getAsString("version") + " in " + getID());
                         break;
                     }
                     if (ver.isFabric || ver.isQuilt || ver.isForge || ver.isNeoForge) {

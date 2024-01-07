@@ -60,7 +60,7 @@ public class ModrinthMarket extends Market {
         this.contentsFolder = new File(plugin.getPluginData(), "contents");
         this.plugin = plugin;
         c.allowRedirect = true;
-        c.headers.put("User-Agent", "FlashLauncher/modrinth.ModrinthSupport/" + plugin.getVersion() + " (mcflashlauncher@gmail.com)");
+        c.headers.put("User-Agent", "FlashLauncher/ModrinthSupport/" + plugin.getVersion() + " (mcflashlauncher@gmail.com)");
         cache = new File(cacheDir, "icons");
         if (!cache.exists())
             cache.mkdirs();
@@ -73,6 +73,10 @@ public class ModrinthMarket extends Market {
                         final ByteArrayOutputStream os = new ByteArrayOutputStream();
                         final WebResponse r = c.open("GET", new sURL("https://api.modrinth.com/v2/tag/category"), os, true);
                         r.auto();
+                        if (r.getResponseCode() != 200) {
+                            System.out.println("[Modrinth] Unknown code: " + r.getResponseCode());
+                            return;
+                        }
                         final JsonList l = Json.parse(new InputStreamReader(new ByteArrayInputStream(os.toByteArray()), StandardCharsets.UTF_8), true).getAsList();
                         for (final JsonDict d : l.toArray(new JsonDict[0])) {
                             if (!d.getAsString("header").equals("categories")) {
@@ -156,7 +160,7 @@ public class ModrinthMarket extends Market {
                                             n,
                                             icon,
                                             ed.getAsString("author"),
-                                            sd.toString()
+                                            sd
                                     );
                                     m.setAuthor(null);
                                     m.scan();
@@ -499,7 +503,7 @@ public class ModrinthMarket extends Market {
                                                                         final WebResponse r = ModrinthMarket.this.c.open("GET", f.url, os, true);
                                                                         r.auto();
                                                                         if (r.getResponseCode() != 200) {
-                                                                            System.out.println("Unknown code: " + r.getResponseCode());
+                                                                            System.out.println("[Modrinth] Unknown code: " + r.getResponseCode());
                                                                             break;
                                                                         }
                                                                         if (Core.hashToHex("SHA-512", os.toByteArray()).equals(f.sha512)) {
