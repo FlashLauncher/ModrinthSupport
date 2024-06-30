@@ -239,6 +239,7 @@ public class ModrinthContent extends MinecraftContent {
                     case "folia":
                     case "bungeecord":
                     case "velocity":
+                    case "waterfall":
                     case "sponge":
                         // Servers
                         break;
